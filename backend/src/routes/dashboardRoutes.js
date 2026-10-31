@@ -7,26 +7,28 @@ router.get('/stats', async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Fetch user scans
-    const { data: scans, error: scansError } = await supabaseAdmin
-      .from('security_scans')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    let userScans = [];
+    let userConvs = [];
 
-    if (scansError) throw scansError;
+    try {
+      const { data: scans } = await supabaseAdmin
+        .from('security_scans')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    // Fetch user conversations
-    const { data: conversations, error: convError } = await supabaseAdmin
-      .from('conversations')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      if (scans) userScans = scans;
+    } catch (e) {}
 
-    if (convError) throw convError;
+    try {
+      const { data: conversations } = await supabaseAdmin
+        .from('conversations')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    const userScans = scans || [];
-    const userConvs = conversations || [];
+      if (conversations) userConvs = conversations;
+    } catch (e) {}
 
     const totalScans = userScans.length;
     const totalConversations = userConvs.length;
@@ -58,7 +60,6 @@ router.get('/stats', async (req, res, next) => {
       { name: 'Critical', severity: 'CRITICAL', count: severityMap.CRITICAL, color: '#EF4444' },
     ];
 
-    // Compute trust trend from scans (ordered chronologically)
     const reversedScans = [...userScans].reverse();
     const trustTrend = reversedScans.map((s, idx) => ({
       index: idx + 1,
@@ -71,7 +72,6 @@ router.get('/stats', async (req, res, next) => {
       title: s.title,
     }));
 
-    // Recent items feed (scans + conversations merged)
     const recentItems = [
       ...userScans.slice(0, 5).map((s) => ({
         id: s.id,
@@ -111,4 +111,3 @@ router.get('/stats', async (req, res, next) => {
 });
 
 export default router;
-

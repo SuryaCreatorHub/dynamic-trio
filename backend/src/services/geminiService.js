@@ -13,7 +13,8 @@ if (!GEMINI_API_KEY) {
 }
 
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY || 'placeholder-api-key' });
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+const FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash'];
 
 const SYSTEM_INSTRUCTION = `You are SentinelTrust AI, a Principal AI Security, Privacy & Trust Auditor and Defensive Cyber-Intelligence Engine.
 
@@ -231,41 +232,47 @@ Analyze the text inside <untrusted_payload> and return a strict JSON object matc
 ${content}
 </untrusted_payload>`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: promptText,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: 'application/json',
-        responseSchema: SCAN_RESPONSE_SCHEMA,
-        temperature: 0.1,
-      },
-    });
+  let lastErr = null;
+  for (const model of FALLBACK_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: promptText,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          responseSchema: SCAN_RESPONSE_SCHEMA,
+          temperature: 0.1,
+        },
+      });
 
-    const parsed = JSON.parse(response.text);
+      const parsed = JSON.parse(response.text);
 
-    // Ensure pre-scanned deterministic entities are preserved if Gemini missed any
-    const existingHints = new Set(parsed.piiAndSecretsFound.map((p) => p.originalHint));
-    for (const ent of preScan.entities) {
-      if (!existingHints.has(ent.originalHint)) {
-        parsed.piiAndSecretsFound.push(ent);
+      // Ensure pre-scanned deterministic entities are preserved if Gemini missed any
+      const existingHints = new Set(parsed.piiAndSecretsFound.map((p) => p.originalHint));
+      for (const ent of preScan.entities) {
+        if (!existingHints.has(ent.originalHint)) {
+          parsed.piiAndSecretsFound.push(ent);
+        }
       }
-    }
 
-    // Validate with Zod
-    const validated = ScanResultZodSchema.parse(parsed);
-    return validated;
-  } catch (err) {
-    console.error('[GEMINI_API_ERROR] Calling Gemini failed, falling back to deterministic scanner:', err);
-    return runDeterministicFallbackScan({
-      domain,
-      complianceFramework,
-      redactionMode,
-      content,
-      preScan,
-    });
+      // Validate with Zod
+      const validated = ScanResultZodSchema.parse(parsed);
+      return validated;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[GEMINI] Model ${model} scan failed:`, err.message?.slice(0, 100));
+    }
   }
+
+  console.error('[GEMINI_API_ERROR] Calling Gemini models failed, falling back to deterministic scanner:', lastErr);
+  return runDeterministicFallbackScan({
+    domain,
+    complianceFramework,
+    redactionMode,
+    content,
+    preScan,
+  });
 }
 
 /**
@@ -310,32 +317,35 @@ Respond as SentinelTrust AI with a JSON object containing:
 4. \`detectedFlags\`: Array of short security tags (e.g., ["PII_DETECTED", "DPDP_COMPLIANCE", "ZERO_TRUST"]).
 5. \`suggestedFollowUps\`: Array of 2 short follow-up questions the user can click next.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: promptText,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: 'application/json',
-        responseSchema: COPILOT_RESPONSE_SCHEMA,
-        temperature: 0.2,
-      },
-    });
+  for (const model of FALLBACK_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: promptText,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          responseSchema: COPILOT_RESPONSE_SCHEMA,
+          temperature: 0.2,
+        },
+      });
 
-    const parsed = JSON.parse(response.text);
-    return CopilotResponseSchema.parse(parsed);
-  } catch (err) {
-    console.error('[GEMINI_COPILOT_ERROR]', err);
-    return {
-      replyMarkdown: `### 🛡️ SentinelTrust AI Security Advisory\n\n**Domain Focus:** \`${domain}\`\n\nWe encountered a transient error reaching the remote AI model, but our local defensive policy advisor is active:\n\n* **Zero-Trust Rule:** Never forward un-sanitized user strings directly into system prompt contexts.\n* **DLP Masking:** Strip credentials and PII (Aadhaar, PAN, SSN, API Keys) at ingress.\n* **Compliance:** Align audit trails with DPDP Act 2023 Section 8 security safeguards.`,
-      riskScore: 35,
-      trustScore: 80,
-      detectedFlags: ['LOCAL_POLICY_FALLBACK', 'ZERO_TRUST'],
-      suggestedFollowUps: [
-        'How do I test my prompts for prompt injection vulnerabilities?',
-        'Can you show me an example of regex PII masking in Node.js?',
-      ],
-    };
+      const parsed = JSON.parse(response.text);
+      return CopilotResponseSchema.parse(parsed);
+    } catch (err) {
+      console.warn(`[GEMINI] Model ${model} copilot failed:`, err.message?.slice(0, 100));
+    }
   }
+
+  return {
+    replyMarkdown: `### 🛡️ SentinelTrust AI Security Advisory\n\n**Domain Focus:** \`${domain}\`\n\nWe encountered a transient error reaching the remote AI model, but our local defensive policy advisor is active:\n\n* **Zero-Trust Rule:** Never forward un-sanitized user strings directly into system prompt contexts.\n* **DLP Masking:** Strip credentials and PII (Aadhaar, PAN, SSN, API Keys) at ingress.\n* **Compliance:** Align audit trails with DPDP Act 2023 Section 8 security safeguards.`,
+    riskScore: 35,
+    trustScore: 80,
+    detectedFlags: ['LOCAL_POLICY_FALLBACK', 'ZERO_TRUST'],
+    suggestedFollowUps: [
+      'How do I test my prompts for prompt injection vulnerabilities?',
+      'Can you show me an example of regex PII masking in Node.js?',
+    ],
+  };
 }
 
