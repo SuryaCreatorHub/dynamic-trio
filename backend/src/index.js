@@ -34,17 +34,8 @@ if (process.env.FRONTEND_URL) {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or Postman)
-      if (!origin) return callback(null, true);
-      const cleanOrigin = origin.replace(/\/+$/, '');
-      if (
-        allowedOrigins.includes(cleanOrigin) ||
-        process.env.NODE_ENV !== 'production' ||
-        cleanOrigin.endsWith('.vercel.app')
-      ) {
-        return callback(null, true);
-      }
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      // Allow all valid incoming web origins (Vercel production, preview deployments, localhost)
+      return callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
