@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import scanRoutes from './routes/scanRoutes.js';
 import conversationRoutes from './routes/conversationRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 
 dotenv.config();
 
@@ -66,6 +67,9 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Public Auth helper
+app.use('/api/auth', authRoutes);
 
 // 2. Protected Routes (require Bearer JWT + Supabase profile check)
 app.use('/api/dashboard', requireAuth, dashboardRoutes);

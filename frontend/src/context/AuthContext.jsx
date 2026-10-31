@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient.js';
+import { api } from '../lib/apiClient.js';
 
 const AuthContext = createContext(null);
 
@@ -31,6 +32,25 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signUp = async ({ email, password, fullName, organization }) => {
+    // 1. Try server-side auto-confirmed creation (bypasses "Email not confirmed" requirement)
+    try {
+      await api.post('/api/auth/register-direct', {
+        email,
+        password,
+        fullName,
+        organization,
+      });
+      // Automatically log the user in immediately
+      const { data: signInData, error: signInErr } =
+        await supabase.auth.signInWithPassword({ email, password });
+      if (!signInErr && signInData) {
+        return signInData;
+      }
+    } catch (directErr) {
+      console.warn('[AUTH] Direct registration fallback:', directErr.message);
+    }
+
+    // 2. Fallback to standard Supabase client signup
     const { data, error } = await supabase.auth.signUp({
       email,
       password,

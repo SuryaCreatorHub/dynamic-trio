@@ -40,14 +40,19 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await signUp({
+      const res = await signUp({
         email,
         password,
         fullName: fullName || 'Security Analyst',
         organization: organization || 'Enterprise Security',
       });
-      // Redirect to dashboard immediately
-      navigate('/dashboard');
+      if (res?.session) {
+        navigate('/dashboard');
+      } else {
+        setError(
+          'Account created! If email confirmation is enabled in your Supabase project, please check your inbox to confirm, or sign in now.'
+        );
+      }
     } catch (err) {
       console.error('Registration failed:', err);
       setError(err.message || 'Failed to create account. Please try again.');

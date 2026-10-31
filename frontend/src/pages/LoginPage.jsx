@@ -26,7 +26,17 @@ export default function LoginPage() {
       navigate(from, { replace: true });
     } catch (err) {
       console.error('Sign-in failed:', err);
-      setError(err.message || 'Invalid email or password. Please verify credentials.');
+      if (err.message?.includes('Email not confirmed')) {
+        setError(
+          'Email not confirmed yet. Please check your inbox for the confirmation email, or disable "Confirm email" in Supabase Dashboard -> Authentication -> Providers -> Email.'
+        );
+      } else if (err.message?.includes('Failed to fetch')) {
+        setError(
+          'Failed to connect to authentication server. Please wait a moment for the new Vercel deployment to complete and refresh.'
+        );
+      } else {
+        setError(err.message || 'Invalid email or password. Please verify credentials.');
+      }
     } finally {
       setLoading(false);
     }
